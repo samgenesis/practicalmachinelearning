@@ -1,0 +1,167 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Sam"
+date: "Thursday, August 25, 2016"
+output: html_document
+---
+
+# Background 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Data 
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+# Load the data and clean
+
+```{r}
+
+setwd("D:\\My Projects\\1 - STAM TEG\\22 - Coursera\\14 - Coursera Practical Machine Learning\\1 - Project Assignment")
+
+trainOrg = read.csv("pml-training.csv", na.strings=c("", "NA", "NULL"))
+testOrg = read.csv("pml-testing.csv", na.strings=c("", "NA", "NULL"))
+
+dim(trainOrg)
+dim(testOrg)
+
+training.dn <- trainOrg[ , colSums(is.na(trainOrg)) == 0]
+dim(training.dn)
+
+rem = c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')
+
+
+training.dr <- training.dn[, -which(names(training.dn) %in% rem)]
+dim(training.dr)
+
+
+library(caret)
+
+# Evaluating NonZero variables
+zeroVar= nearZeroVar(training.dr[sapply(training.dr, is.numeric)], saveMetrics = TRUE)
+training.nonzerovar = training.dr[,zeroVar[, 'nzv']==0]
+dim(training.nonzerovar)
+
+# Evaluating NonZero Variables
+corrMat <- cor(na.omit(training.nonzerovar[sapply(training.nonzerovar, is.numeric)]))
+dim(corrMat)
+
+
+corrDF <- expand.grid(row = 1:52, col = 1:52)
+corrDF$correlation <- as.vector(corrMat)
+```
+
+#Plot 1
+
+```{r}
+levelplot(correlation ~ row+ col, corrDF)
+removecor = findCorrelation(corrMat, cutoff = .90, verbose = TRUE)
+train.decor = training.nonzerovar[,-removecor]
+dim(train.decor)
+
+```
+
+# Slice the data
+Training set split into two for cross validation purposes. Randomly sub sampling 70 pecent of the set for training while the 30 percent for testing.
+
+```{r}
+inTrain <- createDataPartition(y=train.decor$classe, p=0.7, list=FALSE)
+training <- train.decor[inTrain,]; testing <- train.decor[-inTrain,]
+dim(training);dim(testing)
+
+library(tree)
+set.seed(10305)
+tree.training=tree(classe~.,data=training)
+summary(tree.training)
+
+
+library(caret)
+modFit <- train(classe ~ .,method="rpart",data=training)
+print(modFit$finalModel)
+
+tree.pred=predict(tree.training,testing,type="class")
+predMatrix = with(testing,table(tree.pred,classe))
+
+sum(diag(predMatrix))/sum(as.vector(predMatrix)) 
+
+tree.pred=predict(modFit,testing)
+predMatrix = with(testing,table(tree.pred,classe))
+
+#Error Rate
+sum(diag(predMatrix))/sum(as.vector(predMatrix)) 
+
+cv.training=cv.tree(tree.training,FUN=prune.misclass)
+cv.training
+
+```
+
+#Plot 2
+
+```{r}
+plot(cv.training)
+prune.training=prune.misclass(tree.training,best=18)
+tree.pred=predict(prune.training,testing,type="class")
+predMatrix = with(testing,table(tree.pred,classe))
+
+#Error Rate
+sum(diag(predMatrix))/sum(as.vector(predMatrix)) 
+
+require(randomForest)
+
+set.seed(10305)
+
+rf.training=randomForest(classe~.,data=training,ntree=100, importance=TRUE)
+rf.training
+```
+
+#Plot 3
+Estimating the performance of the model on the validation dataset
+```{r}
+varImpPlot(rf.training,)
+tree.pred=predict(rf.training,testing,type="class")
+predMatrix = with(testing,table(tree.pred,classe))
+
+#Error Rate
+sum(diag(predMatrix))/sum(as.vector(predMatrix)) 
+
+```
+
+#Print Answers
+```{r}
+answers <- predict(rf.training, testOrg)
+answers
+
+########### Writing Answers #############
+write_files = function(x){
+  len = length(x)
+  for(i in 1:len){
+    filename = paste0("problem_",i,".txt")
+    write.table(x[i], file=filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
+  }
+}
+write_files(answers)
+
+
+```
+
+
+# Conclusion
+We predicted the classification of 20 observations using algorithms trained on a subset of data using less than 20% of the covariates.
+
+A high level of accuracy has been observed
+
+
+```{r, echo=FALSE}
+#plot(cars)
+
+```
+
